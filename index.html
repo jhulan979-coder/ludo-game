@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="theme-color" content="#1b1230">
+<title>Ludo Dost</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#1b1230;color:#f4eefc;font:15px system-ui,sans-serif;padding-bottom:20px}
+.wrap{max-width:520px;margin:auto;padding:14px}
+h1{margin:6px 0 2px;font-size:26px}
+h2{margin:4px 0 10px;font-size:18px}
+.sub{color:#b7a8cf;font-size:13px;margin-bottom:12px}
+input,select{width:100%;padding:12px;border-radius:10px;border:1px solid #3d2a5c;background:#120b20;color:#fff;font:inherit;margin:6px 0}
+button{font:inherit;cursor:pointer;border:0;border-radius:11px;padding:12px 14px;font-weight:700;color:#fff;background:linear-gradient(110deg,#9333ea,#c026d3);margin:4px 0}
+button.sec{background:#2b1d44;border:1px solid #4a3470;color:#e9dcff}
+button:disabled{opacity:.45}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{flex:1}
+.card{background:#251840;border:1px solid #3d2a5c;border-radius:14px;padding:12px;margin:10px 0}
+.hidden{display:none!important}
+canvas{width:100%;max-width:520px;display:block;border-radius:14px;touch-action:manipulation}
+#dice{font-size:54px;line-height:1;text-align:center;min-width:64px;flex:0 0 70px}
+.pl{display:flex;align-items:center;gap:8px;padding:5px 0}
+.dot{width:14px;height:14px;border-radius:50%;display:inline-block}
+#chatlog{height:130px;overflow:auto;background:#120b20;border-radius:10px;padding:8px;font-size:14px}
+.cm{margin:3px 0;overflow-wrap:anywhere}
+.q button{padding:6px 10px;font-size:18px;margin:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+ <div id="home">
+  <h1>🎲 Ludo Dost</h1>
+  <div class="sub">Dosto ke saath 4 log tak, free. Room code se judo aur baat-cheet bhi karo.</div>
+  <input id="nm" maxlength="12" placeholder="Aapka naam">
+  <button id="bCreate" style="width:100%">＋ Naya room banao</button>
+  <div class="card">
+   <div class="sub">Dost ka room code:</div>
+   <div class="row"><input id="rc" maxlength="4" placeholder="ABCD" style="text-transform:uppercase"><button id="bJoin">Judo</button></div>
+  </div>
+  <p id="hmsg" class="sub"></p>
+ </div>
+ <div id="lobby" class="hidden">
+  <h2>Room code: <span id="lcode" style="color:#fde047;letter-spacing:3px"></span></h2>
+  <button class="sec" id="bShare" style="width:100%">🔗 Dost ko link bhejo</button>
+  <div class="card"><div id="lplist"></div></div>
+  <div id="hostBox" class="card hidden">
+   <label>Kul khiladi (kam ho to computer khelega)</label>
+   <select id="ltotal"><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option></select>
+   <button id="bStart" style="width:100%">▶ Khel shuru karo</button>
+  </div>
+  <p id="lmsg" class="sub"></p>
+  <button class="sec" id="bLeave1">Bahar niklo</button>
+ </div>
+ <div id="game" class="hidden">
+  <div id="gturn" style="padding:10px;border-radius:12px;text-align:center;font-weight:800;font-size:17px"></div>
+  <canvas id="bd" width="600" height="600"></canvas>
+  <div class="card row" style="align-items:center">
+   <div id="dice">🎲</div>
+   <div><button id="bRoll" style="width:100%">🎲 Dice phenko</button><div id="gmsg" class="sub" style="margin:4px 0 0"></div></div>
+  </div>
+  <div class="card" id="gplayers"></div>
+  <div id="overBox" class="hidden"><button id="bAgain" style="width:100%">🔁 Naya khel (host)</button></div>
+  <button class="sec" id="bLeave2">Bahar niklo</button>
+ </div>
+ <div id="chat" class="card hidden">
+  <div id="chatlog"></div>
+  <div class="q" id="quick"></div>
+  <div class="row"><input id="chin" maxlength="120" placeholder="Kuch likho..."><button id="bSend" style="flex:0 0 90px">Bhejo</button></div>
+ </div>
+</div>
+<script>
+window.onerror=function(m,s,l,c){
+ var d=document.createElement('div');
+ d.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#b91c1c;color:#fff;padding:8px;font:12px monospace;white-space:pre-wrap';
+ d.textContent='ERROR: '+m+' (line '+l+')';
+ document.body.appendChild(d);
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const $=id=>document.getElementById(id);
+const SB_URL='https://upsuxmdeqqsgtyxzfoqx.supabase.co';
+const SB_KEY='sb_publishable_60tpvCTgs7Xu3ZPOaCmHUg_ARTOetsE';
+const COL=['#e53935','#43a047','#f9a825','#1e88e5'];
+const CN=['Laal','Hara','Peela','Neela'];
+const STARTS=[1,14,27,40];
+const SAFE=new Set([1,14,27,40,9,22,35,48]);
+const SEATSETS={2:[0,2],3:[0,1,2],4:[0,1,2,3]};
+const BOTN=['Bot Laal','Bot Hara','Bot Peela','Bot Neela'];
+const TRACK=[];
+(function(){
+ const add=(r,c)=>TRACK.push([r,c]);
+ for(let c=0;c<=5;c++)add(6,c);
+ for(let r=5;r>=0;r--)add(r,6);
+ add(0,7);
+ for(let r=0;r<=5;r++)add(r,8);
+ for(let c=9;c<=14;c++)add(6,c);
+ add(7,14);
+ for(let c=14;c>=9;c--)add(8,c);
+ for(let r=9;r<=14;r++)add(r,8);
+ add(14,7);
+ for(let r=14;r>=9;r--)add(r,6);
+ for(let c=5;c>=0;c--)add(8,c);
+ add(7,0);
+})();
+const HOME=[
+ [[7,1],[7,2],[7,3],[7,4],[7,5]],
+ [[1,7],[2,7],[3,7],[4,7],[5,7]],
+ [[7,13],[7,12],[7,11],[7,10],[7,9]],
+ [[13,7],[12,7],[11,7],[10,7],[9,7]]
+];
+const ORG=[[0,0],[9,0],[9,9],[0,9]];
+const SPOT=[[1.8,1.8],[4.2,1.8],[1.8,4.2],[4.2,4.2]];
+const FIN=[[6.4,7.5],[7.5,6.4],[8.6,7.5],[7.5,8.6]];
+const FACE=['⚀','⚁','⚂','⚃','⚄','⚅'];
+let sb=null,ch=null,room='',S=null,peers=[],isHost=false,mySeat=-1,tm=null,lastRid=-1,diceTm=null,AC=null;
+const me={id:Math.random().toString(36).slice(2,10),name:''};
+
+function beep(f,d){
+ try{
+  AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+  const o=AC.createOscillator(),g2=AC.createGain();
+  o.frequency.value=f;g2.gain.value=0.04;
+  o.connect(g2);g2.connect(AC.destination);
+  o.start();o.stop(AC.currentTime+d);
+ }catch(e){}
+}
+function say(t){$('hmsg').textContent=t}
+function show(w){
+ ['home','lobby','game'].forEach(n=>$(n).classList.toggle('hidden',n!==w));
+ $('chat').classList.toggle('hidden',w==='home');
+}
+function genCode(){
+ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let s='';
+ for(let i=0;i<4;i++)s+=a[Math.floor(Math.random()*a.length)];
+ return s;
+}
+function send(o){
+ if(!ch)return;
+ try{ch.send({type:'broadcast',event:'m',payload:o})}catch(e){}
+}
+function connect(code){
+ room=code;
+ if(typeof supabase==='undefined'){say('Internet ya library nahi mili. Dobara koshish karo.');return}
+ sb=sb||supabase.createClient(SB_URL,SB_KEY);
+ ch=sb.channel('ludo-'+code,{config:{broadcast:{self:false},presence:{key:me.id}}});
+ ch.on('broadcast',{event:'m'},p=>onMsg(p.payload));
+ ch.on('presence',{event:'sync'},onSync);
+ ch.subscribe(async st=>{
+  if(st==='SUBSCRIBED'){
+   await ch.track({id:me.id,name:me.name,t:Date.now()});
+   $('lcode').textContent=room;
+   show('lobby');
+   renderLobby();
+  }else if(st==='CHANNEL_ERROR'||st==='TIMED_OUT'){
+   say('Connection nahi ban paya. Internet check karo.');
+  }
+ });
+}
+function leave(){
+ clearTimeout(tm);
+ if(ch&&sb){try{sb.removeChannel(ch)}catch(e){}}
+ ch=null;S=null;peers=[];mySeat=-1;isHost=false;lastRid=-1;
+ $('chatlog').textContent='';
+ show('home');
+}
+function onSync(){
+ const st=ch.presenceState(),arr=[];
+ Object.keys(st).forEach(k=>{
+  const x=st[k]&&st[k][0];
+  if(x&&x.id)arr.push({id:x.id,name:String(x.name||'Khiladi'),t:+x.t||0});
+ });
+ arr.sort((a,b)=>(a.t-b.t)||(a.id<b.id?-1:1));
+ peers=arr;
+ isHost=arr.length>0&&arr[0].id===me.id;
+ if(!S){renderLobby();return}
+ if(isHost){
+  let chg=false;
+  if(S.hostId!==me.id){S.hostId=me.id;chg=true}
+  for(let s=0;s<4;s++){
+   const x=S.seats[s];
+   if(x&&!x.bot&&!arr.find(p=>p.id===x.id)){
+    S.seats[s]={id:'bot'+s,name:x.name+' (bot)',bot:true};chg=true;
+   }
+  }
+  if(chg){pub();return}
+ }
+ renderGame();
+}
+function onMsg(m){
+ if(!m)return;
+ if(m.k==='state'){
+  S=m.s;
+  showGame();
+  renderGame();
+ }else if(m.k==='act'){
+  if(!isHost||!S)return;
+  const seat=S.seats.findIndex(x=>x&&x.id===m.id);
+  if(seat<0||seat!==S.turn)return;
+  if(m.a==='roll')hostRoll();
+  else if(m.a==='move')hostMove(m.pc);
+ }else if(m.k==='chat'){
+  addChat(m);
+ }else if(m.k==='lobby'){
+  S=null;lastRid=-1;clearTimeout(tm);
+  show('lobby');renderLobby();
+ }
+}
+function renderLobby(){
+ if(S)return;
+ const box=$('lplist');box.textContent='';
+ peers.forEach((p,i)=>{
+  const d=document.createElement('div');d.className='pl';
+  const dot=document.createElement('span');dot.className='dot';dot.style.background=i<4?COL[i]:'#777';
+  const t=document.createElement('span');
+  t.textContent=p.name+(i===0?' (host)':'')+(p.id===me.id?' - aap':'')+(i>=4?' (dekhne wala)':'');
+  d.appendChild(dot);d.appendChild(t);box.appendChild(d);
+ });
+ $('hostBox').classList.toggle('hidden',!isHost);
+ $('lmsg').textContent=isHost?'Dost judte hi list me dikhenge. Sab aa jayein to khel shuru karo.':'Host ke khel shuru karne ka intezaar...';
+ if(isHost){
+  const n=Math.min(4,peers.length),sel=$('ltotal');
+  for(const o of sel.options)o.disabled=(+o.value<n);
+  if(+sel.value<n)sel.value=String(Math.max(2,n));
+ }
+}
+function newGame(humans,total){
+ const set=SEATSETS[total];
+ const seats=[null,null,null,null];
+ set.forEach((s,i)=>{
+  const h=humans[i];
+  seats[s]=h?{id:h.id,name:h.name,bot:false}:{id:'bot'+s,name:BOTN[s],bot:true};
+ });
+ return {seats:seats,pos:[0,1,2,3].map(()=>[-1,-1,-1,-1]),turn:set[0],roll:0,rid:0,phase:'roll',sixes:0,can:[],msg:'Khel shuru! Pehli baari: '+seats[set[0]].name,over:false,winner:-1,hostId:me.id};
+}
+function startGame(){
+ if(!isHost)return;
+ const humans=peers.slice(0,4);
+ const total=Math.min(4,Math.max(2,+$('ltotal').value,humans.length));
+ S=newGame(humans,total);
+ lastRid=-1;
+ pub();
+}
+function pub(){
+ if(!ch||!S)return;
+ send({k:'state',s:S});
+ showGame();
+ renderGame();
+ afterState();
+}
+function showGame(){if($('game').classList.contains('hidden'))show('game')}
+function afterState(){
+ clearTimeout(tm);
+ if(!isHost||!S||S.over)return;
+ const seat=S.seats[S.turn];
+ if(!seat)return;
+ const ph=S.phase;
+ if(ph==='roll'&&seat.bot)tm=setTimeout(hostRoll,1000);
+ else if(ph==='move'&&seat.bot)tm=setTimeout(botMove,900);
+ else if(ph==='auto')tm=setTimeout(()=>{if(S&&S.phase==='auto')hostMove(S.can[0])},800);
+ else if(ph==='skip')tm=setTimeout(()=>{if(S&&S.phase==='skip'){nextTurn();pub()}},1300);
+}
+function nextTurn(){
+ const act=[0,1,2,3].filter(s=>S.seats[s]);
+ const k=act.indexOf(S.turn);
+ S.turn=act[(k+1)%act.length];
+ S.phase='roll';S.roll=0;S.sixes=0;S.can=[];
+}
+function hostRoll(){
+ if(!isHost||!S||S.phase!=='roll')return;
+ const r=1+Math.floor(Math.random()*6);
+ const seat=S.turn;
+ S.roll=r;S.rid++;
+ S.sixes=(r===6)?S.sixes+1:0;
+ if(S.sixes>=3){S.msg=S.seats[seat].name+': teen 6 lagatar, chaal gayi 😅';S.phase='skip';S.can=[];pub();return}
+ const can=[];
+ for(let i=0;i<4;i++){
+  const p=S.pos[seat][i];
+  if(p===-1?r===6:p+r<=56)can.push(i);
+ }
+ S.can=can;
+ if(!can.length){S.msg=S.seats[seat].name+': koi chaal nahi';S.phase='skip'}
+ else if(can.length===1||can.every(i=>S.pos[seat][i]===S.pos[seat][can[0]])){S.msg='';S.phase='auto'}
+ else{S.msg='';S.phase='move'}
+ pub();
+}
+function hostMove(pc){
+ if(!isHost||!S||(S.phase!=='move'&&S.phase!=='auto'))return;
+ if(S.can.indexOf(pc)<0)return;
+ const s=S.turn,r=S.roll;
+ const p=S.pos[s][pc],np=(p===-1)?0:p+r;
+ S.pos[s][pc]=np;
+ let cap=0;
+ if(np>=0&&np<=50){
+  const a=(STARTS[s]+np)%52;
+  if(!SAFE.has(a)){
+   for(let o=0;o<4;o++){
+    if(o===s||!S.seats[o])continue;
+    for(let q=0;q<4;q++){
+     const pp=S.pos[o][q];
+     if(pp>=0&&pp<=50&&(STARTS[o]+pp)%52===a){S.pos[o][q]=-1;cap++}
+    }
+   }
+  }
+ }
+ const fin=(np===56);
+ let msg='';
+ if(cap)msg=S.seats[s].name+' ne '+cap+' goti kaati! 💥';
+ else if(fin)msg=S.seats[s].name+' ki goti ghar pahunchi! 🏠';
+ if(S.pos[s].every(x=>x===56)){
+  S.winner=s;S.over=true;S.phase='over';S.can=[];
+  S.msg='🏆 '+S.seats[s].name+' jeet gaya!';
+  pub();return;
+ }
+ S.msg=msg;
+ S.can=[];
+ if(r===6||cap||fin){S.phase='roll';S.roll=0}
+ else nextTurn();
+ pub();
+}
+function botMove(){
+ if(!isHost||!S||S.phase!=='move')return;
+ const s=S.turn,r=S.roll;
+ let best=S.can[0],bs=-1e9;
+ S.can.forEach(i=>{
+  const p=S.pos[s][i],np=(p===-1)?0:p+r;
+  let sc=np;
+  if(p===-1)sc+=60;
+  if(np===56)sc+=90;
+  if(np>50&&np<56)sc+=25;
+  if(np<=50){
+   const a=(STARTS[s]+np)%52;
+   if(SAFE.has(a))sc+=15;
+   else{
+    for(let o=0;o<4;o++){
+     if(o===s||!S.seats[o])continue;
+     for(let q=0;q<4;q++){
+      const pp=S.pos[o][q];
+      if(pp>=0&&pp<=50&&(STARTS[o]+pp)%52===a)sc+=100;
+     }
+    }
+   }
+  }
+  sc+=Math.random()*8;
+  if(sc>bs){bs=sc;best=i}
+ });
+ hostMove(best);
+}
+function act(a,pc){
+ if(!S)return;
+ if(isHost){
+  if(a==='roll')hostRoll();else hostMove(pc);
+ }else send({k:'act',id:me.id,a:a,pc:pc});
+}
+function animDice(v){
+ clearInterval(diceTm);
+ let n=0;
+ beep(300,0.05);
+ diceTm=setInterval(()=>{
+  n++;
+  if(n>7){clearInterval(diceTm);$('dice').textContent=FACE[v-1];beep(520,0.08);return}
+  $('dice').textContent=FACE[Math.floor(Math.random()*6)];
+ },70);
+}
+function renderGame(){
+ if(!S)return;
+ mySeat=S.seats.findIndex(x=>x&&x.id===me.id);
+ const t=S.turn,tn=S.seats[t]?S.seats[t].name:'';
+ const gt=$('gturn');
+ gt.style.background=S.over?'#6d28d9':COL[t];
+ gt.style.color=(t===2&&!S.over)?'#222':'#fff';
+ let txt;
+ if(S.over)txt=S.msg;
+ else if(mySeat<0)txt='Aap dekh rahe ho. '+tn+' ki baari';
+ else if(t===mySeat)txt=S.phase==='move'?'Aapki baari: chamakti goti chuno':'Aapki baari!';
+ else txt=tn+' ki baari';
+ gt.textContent=txt;
+ $('gmsg').textContent=S.over?'':(S.msg||'');
+ const can=(S.phase==='roll'&&t===mySeat&&!S.over);
+ $('bRoll').disabled=!can;
+ if(S.rid!==lastRid){lastRid=S.rid;if(S.roll>0)animDice(S.roll)}
+ const pl=$('gplayers');pl.textContent='';
+ [0,1,2,3].forEach(s=>{
+  const x=S.seats[s];
+  if(!x)return;
+  const d=document.createElement('div');d.className='pl';
+  const dot=document.createElement('span');dot.className='dot';dot.style.background=COL[s];
+  const tt=document.createElement('span');
+  const done=S.pos[s].filter(v=>v===56).length;
+  tt.textContent=(S.turn===s&&!S.over?'▶ ':'')+x.name+(x.id===me.id?' (aap)':'')+'   🏠 '+done+'/4';
+  d.appendChild(dot);d.appendChild(tt);pl.appendChild(d);
+ });
+ $('overBox').classList.toggle('hidden',!(S.over&&isHost));
+}
+function pxy(s,p,i){
+ if(p<0){const o=ORG[s],q=SPOT[i];return [o[0]+q[0],o[1]+q[1]]}
+ if(p<=50){const t=TRACK[(STARTS[s]+p)%52];return [t[1]+0.5,t[0]+0.5]}
+ if(p<=55){const t=HOME[s][p-51];return [t[1]+0.5,t[0]+0.5]}
+ const f=FIN[s],d=(i-1.5)*0.2;
+ return (s%2===0)?[f[0],f[1]+d]:[f[0]+d,f[1]];
+}
+const cv=$('bd'),g=cv.getContext('2d');
+let hits=[];
+function rr(x,y,w,h,r){
+ g.beginPath();g.moveTo(x+r,y);
+ g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);
+ g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();
+}
+function piece(x,y,r,col){
+ g.beginPath();g.arc(x,y+r*0.15,r,0,7);g.fillStyle='rgba(0,0,0,.3)';g.fill();
+ g.beginPath();g.arc(x,y,r,0,7);g.fillStyle=col;g.fill();
+ g.lineWidth=r*0.18;g.strokeStyle='#222';g.stroke();
+ g.beginPath();g.arc(x-r*0.3,y-r*0.3,r*0.28,0,7);g.fillStyle='rgba(255,255,255,.55)';g.fill();
+}
+function draw(){
+ const W=cv.width,u=W/15;
+ g.clearRect(0,0,W,W);
+ g.fillStyle='#fffdf5';g.fillRect(0,0,W,W);
+ ORG.forEach((o,s)=>{
+  g.fillStyle=COL[s];rr(o[0]*u,o[1]*u,6*u,6*u,u*0.7);g.fill();
+  g.fillStyle='#fffdf5';rr((o[0]+0.9)*u,(o[1]+0.9)*u,4.2*u,4.2*u,u*0.5);g.fill();
+  for(let i=0;i<4;i++){
+   const q=SPOT[i];
+   g.beginPath();g.arc((o[0]+q[0])*u,(o[1]+q[1])*u,u*0.5,0,7);g.fillStyle=COL[s]+'55';g.fill();
+  }
+ });
+ g.lineWidth=1;g.strokeStyle='#b9b2a3';
+ TRACK.forEach((t,i)=>{
+  const si=STARTS.indexOf(i);
+  g.fillStyle=si>=0?COL[si]:'#ffffff';
+  g.fillRect(t[1]*u,t[0]*u,u,u);g.strokeRect(t[1]*u,t[0]*u,u,u);
+  if(SAFE.has(i)&&si<0){
+   g.fillStyle='#8a7f6d';g.font=(u*0.7)+'px sans-serif';g.textAlign='center';g.textBaseline='middle';
+   g.fillText('★',(t[1]+0.5)*u,(t[0]+0.55)*u);
+  }
+ });
+ HOME.forEach((h,s)=>h.forEach(t=>{
+  g.fillStyle=COL[s]+'dd';g.fillRect(t[1]*u,t[0]*u,u,u);g.strokeRect(t[1]*u,t[0]*u,u,u);
+ }));
+ const tri=[[[6,6],[6,9],[7.5,7.5]],[[6,6],[9,6],[7.5,7.5]],[[9,6],[9,9],[7.5,7.5]],[[6,9],[9,9],[7.5,7.5]]];
+ tri.forEach((p,s)=>{
+  g.beginPath();g.moveTo(p[0][0]*u,p[0][1]*u);g.lineTo(p[1][0]*u,p[1][1]*u);g.lineTo(p[2][0]*u,p[2][1]*u);
+  g.closePath();g.fillStyle=COL[s];g.fill();g.stroke();
+ });
+ hits=[];
+ if(!S)return;
+ const cells={};
+ for(let s=0;s<4;s++){
+  if(!S.seats[s])continue;
+  for(let i=0;i<4;i++){
+   const xy=pxy(s,S.pos[s][i],i);
+   const k=Math.round(xy[0]*10)+','+Math.round(xy[1]*10);
+   (cells[k]=cells[k]||[]).push({s:s,i:i,x:xy[0],y:xy[1]});
+  }
+ }
+ const now=Date.now();
+ const movS=(S.phase==='move'||S.phase==='auto')?S.turn:-1;
+ Object.keys(cells).forEach(k=>{
+  const L=cells[k],n=L.length;
+  L.forEach((c,j)=>{
+   let x=c.x,y=c.y,r=u*0.36;
+   const pv=S.pos[c.s][c.i];
+   if(n>1&&pv>=0&&pv<56){const a=j*6.2832/n;x+=Math.cos(a)*0.2;y+=Math.sin(a)*0.2;r=u*0.27}
+   x*=u;y*=u;
+   if(c.s===movS&&S.can.indexOf(c.i)>=0){
+    g.beginPath();g.arc(x,y,r*(1.35+0.15*Math.sin(now/140)),0,7);
+    g.lineWidth=3;g.strokeStyle='#fff700';g.stroke();
+    if(S.phase==='move'&&c.s===mySeat)hits.push({i:c.i,x:x,y:y});
+   }
+   piece(x,y,r,COL[c.s]);
+  });
+ });
+ if(S.over){
+  g.fillStyle='rgba(0,0,0,0.55)';g.fillRect(0,W*0.38,W,W*0.24);
+  g.fillStyle='#fde047';g.font='bold '+(W*0.075)+'px sans-serif';g.textAlign='center';g.textBaseline='middle';
+  g.fillText('🏆 '+S.seats[S.winner].name+' jeet gaya!',W/2,W*0.5);
+ }
+}
+setInterval(()=>{if(S&&!$('game').classList.contains('hidden'))draw()},70);
+cv.addEventListener('pointerdown',e=>{
+ if(!S||S.phase!=='move'||S.turn!==mySeat)return;
+ const r=cv.getBoundingClientRect(),k=cv.width/r.width;
+ const x=(e.clientX-r.left)*k,y=(e.clientY-r.top)*k;
+ let best=null,bd=1e9;
+ hits.forEach(h=>{const d=Math.hypot(h.x-x,h.y-y);if(d<bd){bd=d;best=h}});
+ if(best&&bd<cv.width/15*0.8)act('move',best.i);
+});
+function addChat(m){
+ const d=document.createElement('div');d.className='cm';
+ const b=document.createElement('b');b.textContent=String(m.n||'')+': ';
+ if(m.c>=0&&m.c<4)b.style.color=COL[m.c];
+ const s=document.createElement('span');s.textContent=String(m.t||'');
+ d.appendChild(b);d.appendChild(s);
+ const lg=$('chatlog');lg.appendChild(d);lg.scrollTop=lg.scrollHeight;
+ while(lg.children.length>60)lg.removeChild(lg.firstChild);
+}
+function sendChat(t){
+ t=String(t||'').trim().slice(0,120);
+ if(!t||!ch)return;
+ const seat=S?S.seats.findIndex(x=>x&&x.id===me.id):peers.findIndex(p=>p.id===me.id);
+ const m={k:'chat',n:me.name,c:seat,t:t};
+ addChat(m);send(m);
+}
+['👍','😂','😡','😎','🙏','🔥','⏳'].forEach(e=>{
+ const b=document.createElement('button');b.className='sec';b.textContent=e;
+ b.onclick=()=>sendChat(e);
+ $('quick').appendChild(b);
+});
+$('bSend').onclick=()=>{sendChat($('chin').value);$('chin').value=''};
+$('chin').addEventListener('keydown',e=>{if(e.key==='Enter'){sendChat($('chin').value);$('chin').value=''}});
+function getName(){
+ const n=$('nm').value.trim().slice(0,12);
+ if(!n){say('Pehle apna naam likho.');return null}
+ localStorage.setItem('ludo_name',n);
+ me.name=n;
+ return n;
+}
+$('bCreate').onclick=()=>{if(getName())connect(genCode())};
+$('bJoin').onclick=()=>{
+ if(!getName())return;
+ const c=$('rc').value.trim().toUpperCase();
+ if(c.length!==4){say('Room code 4 akshar ka hota hai.');return}
+ connect(c);
+};
+$('bStart').onclick=startGame;
+$('bRoll').onclick=()=>act('roll');
+$('bAgain').onclick=()=>{
+ if(!isHost)return;
+ S=null;lastRid=-1;clearTimeout(tm);
+ send({k:'lobby'});
+ show('lobby');renderLobby();
+};
+$('bLeave1').onclick=leave;
+$('bLeave2').onclick=leave;
+$('bShare').onclick=async()=>{
+ const url=location.origin+location.pathname+'?room='+room;
+ const txt='Ludo khelne aao! Room code: '+room+'\n'+url;
+ try{if(navigator.share){await navigator.share({text:txt});return}}catch(e){}
+ try{await navigator.clipboard.writeText(txt);alert('Link copy ho gaya, dost ko bhejo.')}catch(e){prompt('Ye dost ko bhejo:',txt)}
+};
+$('nm').value=localStorage.getItem('ludo_name')||'';
+const q=new URLSearchParams(location.search).get('room');
+if(q)$('rc').value=q.toUpperCase().slice(0,4);
+</script>
+</body>
+</html>
